@@ -1,3 +1,4 @@
+
 from socket import *
 import os
 import sys
@@ -7,28 +8,35 @@ import select
 import binascii
 import pandas as pd
 import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
 
-ICMP_ECHO_REQUEST = 8
+warnings.simplefilter(action='ignore', category=FutureWarning)
+ICMP_ECHO_REQUEST_TYPE = 8
+ICMP_ECHO_REPLY_TYPE = 0
+ICMP_ECHO_REPLY_CODE = 0
+ICMP_ECHO_REQUEST_CODE = 0
+size = 0
+ttl = 0
+Rtt = 0
+endpoint = "google.com"
 
 def checksum(string):
-    csum = 0
+    checkSum = 0
     countTo = (len(string) // 2) * 2
     count = 0
 
     while count < countTo:
         thisVal = (string[count + 1]) * 256 + (string[count])
-        csum += thisVal
-        csum &= 0xffffffff
+        checkSum += thisVal
+        checkSum &= 0xffffffff
         count += 2
 
     if countTo < len(string):
-        csum += (string[len(string) - 1])
-        csum &= 0xffffffff
+        checkSum += (string[len(string) - 1])
+        checkSum &= 0xffffffff
 
-    csum = (csum >> 16) + (csum & 0xffff)
-    csum = csum + (csum >> 16)
-    answer = ~csum
+    checkSum = (checkSum >> 16) + (checkSum & 0xffff)
+    checkSum = checkSum + (checkSum >> 16)
+    answer = ~checkSum
     answer = answer & 0xffff
     answer = answer >> 8 | (answer << 8 & 0xff00)
     return answer
@@ -46,12 +54,19 @@ def receiveOnePing(mySocket, ID, timeout, destAddr):
         timeReceived = time.time()
         recPacket, addr = mySocket.recvfrom(1024)
 
-        # Fill in start
-
-        # Fetch the ICMP header from the IP packet
-
-        # Fill in end
+        #Fill in start
+        # Header is type (8), code (8), checksum (16), id (16), sequence (16)
+        icmpHeader = recPacket [20:28]
+        
+        #TODO fix below
+        size = struct.calcsize("d")
+        print ("bytes", size)
+        
+        timeSent = struct.unpack("d", recPacket[28:28 + size])[0]
+        Rtt = timeReceived - timeSent
         timeLeft = timeLeft - howLongInSelect
+        return Rtt; 
+
         if timeLeft <= 0:
             return "Request timed out."
 
@@ -61,27 +76,22 @@ def sendOnePing(mySocket, destAddr, ID):
     myChecksum = 0
     # Make a dummy header with a 0 checksum
     # struct -- Interpret strings as packed binary data
-    header = struct.pack("bbHHh", ICMP_ECHO_REQUEST, 0, myChecksum, ID, 1)
+    header = struct.pack("bbHHh", ICMP_ECHO_REQUEST_TYPE, ICMP_ECHO_REQUEST_CODE, myChecksum, ID, 1)
     data = struct.pack("d", time.time())
     # Calculate the checksum on the data and the dummy header.
     myChecksum = checksum(header + data)
 
     # Get the right checksum, and put in the header
-
     if sys.platform == 'darwin':
         # Convert 16-bit integers from host to network  byte order
         myChecksum = htons(myChecksum) & 0xffff
     else:
         myChecksum = htons(myChecksum)
 
-
-    header = struct.pack("bbHHh", ICMP_ECHO_REQUEST, 0, myChecksum, ID, 1)
+    header = struct.pack("bbHHh", ICMP_ECHO_REQUEST_TYPE, ICMP_ECHO_REQUEST_CODE, myChecksum, ID, 1)
     packet = header + data
 
     mySocket.sendto(packet, (destAddr, 1))  # AF_INET address must be tuple, not str
-
-    # Both LISTS and TUPLES consist of a number of objects
-    # which can be referenced by their position number within the object.
 
 def doOnePing(destAddr, timeout):
     icmp = getprotobyname("icmp")
@@ -102,33 +112,40 @@ def ping(host, timeout=1):
     print("\nPinging " + dest + " using Python:")
     print("")
     
-    response = pd.DataFrame(columns=['bytes','rtt','ttl']) #This creates an empty dataframe with 3 headers with the column specific names declared
+    #This creates an empty dataframe with 3 headers with the column specific names declared
+    response = pd.DataFrame(columns=['bytes','time','ttl']) 
     
-    #Send ping requests to a server separated by approximately one second
-    #Add something here to collect the delays of each ping in a list so you can calculate vars after your ping
-    
-    for i in range(0,4): #Four pings will be sent (loop runs for i=0, 1, 2, 3)
-        delay, statistics = doOnePing(dest, timeout) #what is stored into delay and statistics?
-        response = #store your bytes, rtt, and ttle here in your response pandas dataframe. An example is commented out below for vars
-        print(delay) 
-        time.sleep(1)  # wait one second
+    #Send ping requests to a server separated by approximately one second        
+    statistics_list = []
+
+    for index in range(0,4): #Four pings will be sent (loop runs for i=0, 1, 2, 3)
+        delay = doOnePing(dest, timeout)#, statistics_list.append(delay)
+        #TODO store your bytes, rtt, and ttle here in your response pandas dataframe. An example is commented out below for vars
+
+        response = response.append({'bytes': str(size), 'time': str(Rtt), 'ttl': str(ttl)}, ignore_index=True)
+        print(delay)
+        #response.values
+        # wait one second
+        time.sleep(1)  
     
     packet_lost = 0
     packet_recv = 0
-    #fill in start. UPDATE THE QUESTION MARKS
+    #TODO fill in start. UPDATE THE QUESTION MARKS
     for index, row in response.iterrows():
-        if ???? == 0: #access your response df to determine if you received a packet or not
-            packet_lost = #????
+        # access your response df to determine if you received a packet or not
+        if  response[response['bytes']] == 0: #??????
+            packet_lost += 1
         else:
-            packet_recv = #????
+            packet_recv += 1
     #fill in end
 
     #You should have the values of delay for each ping here structured in a pandas dataframe; 
     #fill in calculation for packet_min, packet_avg, packet_max, and stdev
     vars = pd.DataFrame(columns=['min', 'avg', 'max', 'stddev'])
     vars = vars.append({'min':str(round(response['rtt'].min(), 2)), 'avg':str(round(response['rtt'].mean(), 2)),'max':str(round(response['rtt'].max(), 2)), 'stddev':str(round(response['rtt'].std(),2))}, ignore_index=True)
-    print (vars) #make sure your vars data you are returning resembles acceptance criteria
+    
+    print (vars)  #vars data has to be printed as native OS trace functions (e.g. tracert)
     return vars
 
 if __name__ == '__main__':
-    ping("google.com")
+    ping(endpoint)
